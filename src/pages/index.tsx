@@ -1,9 +1,12 @@
-import { GetStaticProps } from 'next';
-
-import { getPrismicClient } from '../services/prismic';
-
 import commonStyles from '../styles/common.module.scss';
 import styles from './home.module.scss';
+import { FiCalendar, FiUser } from 'react-icons/fi';
+import { GetStaticProps } from 'next';
+import { getPrismicClient } from '../services/prismic';
+import Link from 'next/link';
+import { formatDate } from '../utils/formatDate';
+import { useState } from 'react';
+import Header from '../components/Header';
 
 interface Post {
   uid?: string;
@@ -24,13 +27,91 @@ interface HomeProps {
   postsPagination: PostPagination;
 }
 
-// export default function Home() {
-//   // TODO
-// }
+export default function Home({ postsPagination }: HomeProps) {
+  const [posts, setPosts] = useState<Post[]>(postsPagination.results);
+  const [nextPage, setNextPage] = useState<string>(postsPagination.next_page);
 
-// export const getStaticProps = async () => {
-//   // const prismic = getPrismicClient({});
-//   // const postsResponse = await prismic.getByType(TODO);
+  async function handleMorePosts() {
+    if (nextPage === null) return;
 
-//   // TODO
-// };
+    const response = await fetch(nextPage);
+    const data: PostPagination = await response.json();
+
+    const newPosts = data.results.map(post => {
+      post.first_publication_date = formatDate(post.first_publication_date);
+      return post;
+    });
+
+    setNextPage(data.next_page);
+    setPosts(state => [...state, ...newPosts]);
+  }
+
+  return (
+    <>
+      <Header />
+
+      <div className={commonStyles.container}>
+        <div className={styles.posts}>
+          {posts.map(post => {
+            return (
+              <Link key={post.uid} href={`post/${post.uid}`} passHref>
+                <div className={styles.post}>
+                  <h1>{post.data.title}</h1>
+                  <p>{post.data.subtitle}</p>
+                  <div className={styles.post_info}>
+                    <span>
+                      <FiCalendar />
+                      {formatDate(post.first_publication_date)}
+                    </span>
+                    <span>
+                      <FiUser />
+                      {post.data.author}
+                    </span>
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+        {nextPage ? (
+          <button className={styles.more_posts} onClick={handleMorePosts}>
+            Carregar mais posts
+          </button>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+export const getStaticProps: GetStaticProps = async ({ previewData }) => {
+  const prismic = getPrismicClient({});
+
+  const postsResponse = await prismic.getByType('posts', {
+    pageSize: 3,
+    orderings: {
+      field: 'document.first_publication_date',
+      direction: 'desc',
+    },
+  });
+
+  const posts = postsResponse.results.map(posts => {
+    return {
+      uid: posts.uid,
+      first_publication_date: posts.first_publication_date,
+      data: {
+        title: posts.data.title,
+        subtitle: posts.data.subtitle,
+        author: posts.data.author,
+      },
+    };
+  });
+
+  return {
+    props: {
+      postsPagination: {
+        next_page: postsResponse.next_page,
+        results: posts,
+      },
+    },
+  };
+};
